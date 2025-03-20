@@ -78,7 +78,7 @@ const Status BufMgr::allocBuf(int & frame)
 
             // If not valid, it's free -- use it immediately.
             if (!candidate.valid) {
-                candidate.Set(NULL, -1);
+                
                 frame = clockHand;
                 return OK;
             }
@@ -95,7 +95,7 @@ const Status BufMgr::allocBuf(int & frame)
             
             // At this point, candidate is not pinned and its refbit is false.
             // If dirty, write it to disk.
-            if (candidate.dirty && candidate.file != NULL) {
+            if (candidate.dirty) {
                 Status status = candidate.file->writePage(candidate.pageNo, &bufPool[clockHand]);
                 if (status != OK)
                     return UNIXERR;
@@ -103,16 +103,16 @@ const Status BufMgr::allocBuf(int & frame)
             }
             
             // Remove mapping if the candidate was valid.
-            if (candidate.valid && candidate.file != NULL)
+            if (candidate.valid)
                 hashTable->remove(candidate.file, candidate.pageNo);
             
             // Reinitialize the descriptor and return the frame.
-            candidate.Set(NULL, -1);
             frame = clockHand;
             return OK;
         }
         cycles++;
     }
+    printSelf();
     // If no candidate found even after two cycles then all buffers are pinned.
     return BUFFEREXCEEDED;
 }
@@ -180,27 +180,23 @@ const Status BufMgr::unPinPage(File* file, const int PageNo,
 }
 
 const Status BufMgr::allocPage(File* file, int& pageNo, Page*& page) 
-{ // this method return both the page number of the newly allocated page and pointer to the buffer frame allocated for the page
-    // allocate an empty page in the specified file
-    // return the page number of the newly allocated page
+{
     Status status = file->allocatePage(pageNo);
     if (status != OK)
         return status;
     
-    // obtain a buffer pool frame.
-    int frameNo = 0;
+    int frameNo;
     status = allocBuf(frameNo);
     if (status != OK)
         return status;
     
-    // an entry is inserted into the hash table 
+    // Set up the buffer frame.
+    bufTable[frameNo].Set(file, pageNo);
+    page = &bufPool[frameNo];
+
     status = hashTable->insert(file, pageNo, frameNo);
     if (status != OK)
         return HASHTBLERROR;
-    
-    // and Set() is invoked on the frame to set it up properly
-    bufTable[frameNo].Set(file, pageNo);
-    page = &bufPool[frameNo];
     
     return OK;
 }
